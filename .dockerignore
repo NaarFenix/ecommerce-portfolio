@@ -1,0 +1,9 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+**/*.user
+src/EcommercePortfolio.Api/wwwroot/uploads/
+.git/
+.gitignore
+Dockerfile
