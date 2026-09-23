@@ -1,0 +1,26 @@
+# Build outputs
+bin/
+obj/
+
+# User files
+*.user
+*.suo
+
+# Config overrides
+appsettings.Development.json
+appsettings.Local.json
+
+# Secrets (just in case)
+password
+*.secret
+*.key
+.env
+.env.*
+
+# Uploaded images (dev only — real uploads go to object storage)
+src/EcommercePortfolio.Api/wwwroot/uploads/
+
+# IDE
+.vs/
+.vscode/
+.idea/
