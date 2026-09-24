@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.HttpOverrides;
 using EcommercePortfolio.Api.Auth;
 using EcommercePortfolio.Api.Endpoints;
 using EcommercePortfolio.Api.Html;
@@ -10,6 +11,14 @@ using Stripe;
 using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ---- Trust Railway's reverse proxy ----
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 // ---- DB ----
 builder.Services.AddDbContext<AppDbContext>(opt =>
@@ -24,7 +33,7 @@ builder.Services.AddAntiforgery(options =>
     options.HeaderName = "RequestVerificationToken";
     options.Cookie.Name = "__Host-csrf";
     options.Cookie.HttpOnly = true;
-    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest; // dev-friendly
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
     options.Cookie.SameSite = SameSiteMode.Strict;
 });
 
@@ -39,10 +48,11 @@ builder.Services.AddLoginRateLimiter();
 
 var app = builder.Build();
 
+// ---- Forwarded headers (must be first) ----
+app.UseForwardedHeaders();
+
 // ---- Seed admin (if none) ----
 await AdminSeeder.SeedAsync(app.Services, app.Configuration, app.Logger);
-
-// ---- Pipeline ----
 
 // ---- Security headers ----
 app.Use(async (ctx, next) =>
@@ -101,7 +111,7 @@ app.MapGet("/checkout/cancelled", CheckoutEndpoints.CancelledAsync);
 app.MapPost("/webhooks/stripe", CheckoutEndpoints.StripeWebhookAsync).DisableAntiforgery();
 
 // ==================================================
-// ADMIN AUTH ENDPOINTS (not behind AdminOnly)
+// ADMIN AUTH ENDPOINTS
 // ==================================================
 
 app.MapGet("/admin/login", (HttpContext ctx) =>
