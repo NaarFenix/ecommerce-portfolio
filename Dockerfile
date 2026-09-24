@@ -1,6 +1,9 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+# Cache buster — change this value to force a full rebuild
+RUN echo "build-v2"
+
 COPY EcommercePortfolio.slnx ./
 COPY src/EcommercePortfolio.Domain/*.csproj ./src/EcommercePortfolio.Domain/
 COPY src/EcommercePortfolio.Data/*.csproj ./src/EcommercePortfolio.Data/
@@ -18,6 +21,7 @@ RUN dotnet publish src/EcommercePortfolio.Api/EcommercePortfolio.Api.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish ./
+RUN find /app -iname "*skiasharp*"
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "EcommercePortfolio.Api.dll"]
