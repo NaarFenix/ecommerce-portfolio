@@ -82,7 +82,6 @@ public static class ProductImageEndpoints
 
         if (errors.Count > 0 && !await db.ProductImages.AnyAsync(i => i.ProductId == id))
         {
-            // Nothing saved at all — show errors
             return await FragmentWithError(ctx, db, id, string.Join(" · ", errors));
         }
 
@@ -132,7 +131,6 @@ public static class ProductImageEndpoints
 
         await storage.DeleteAsync(url, ctx.RequestAborted);
 
-        // If we deleted the primary, promote the oldest remaining image
         if (wasPrimary)
         {
             var next = await db.ProductImages
@@ -183,7 +181,7 @@ public static class ProductImageEndpoints
     <label for=""file-input"" class=""drop-label"">
       <span class=""drop-icon"">📁</span>
       <span>Drop images here, or <u>click to browse</u></span>
-      <span class=""drop-hint"">1:1 (square) recommended · Min 800×800 · Max 4000×4000 · Max 5 MB · JPEG/PNG/WebP</span>
+      <span class=""drop-hint"">1:1 (square) recommended · Max 5 MB · JPEG/PNG/WebP · Large images auto-resized in your browser</span>
     </label>
     <input id=""file-input"" name=""files"" type=""file"" accept=""image/jpeg,image/png,image/webp"" multiple style=""display:none"">
     <div id=""file-list"" class=""file-list""></div>
@@ -244,7 +242,7 @@ public static class ProductImageEndpoints
             sb.Append("</div>");
         }
 
-        // ---- Client script (raw, no interpolation) ----
+        // ---- Client script: canvas-based resize before upload ----
         sb.Append(@"<script>
 (function () {
   const input = document.getElementById('file-input');
@@ -254,6 +252,37 @@ public static class ProductImageEndpoints
   if (!input) return;
 
   const MAX_BYTES = 5 * 1024 * 1024;
+  const MAX_DIM   = 2000;
+  const QUALITY   = 0.85;
+  const RESIZE_THRESHOLD = 500 * 1024; // only resize files > 500 KB
+
+  async function resizeIfNeeded(file) {
+    if (!file.type.startsWith('image/')) return file;
+    if (file.size <= RESIZE_THRESHOLD) return file;
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > MAX_DIM || h > MAX_DIM) {
+          const scale = MAX_DIM / Math.max(w, h);
+          w = Math.round(w * scale);
+          h = Math.round(h * scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob((blob) => {
+          if (!blob) return resolve(file);
+          const newName = file.name.replace(/\.[^.]+$/, '') + '.jpg';
+          resolve(new File([blob], newName, { type: 'image/jpeg' }));
+        }, 'image/jpeg', QUALITY);
+      };
+      img.onerror = () => resolve(file);
+      img.src = URL.createObjectURL(file);
+    });
+  }
 
   function renderList() {
     list.innerHTML = '';
@@ -271,14 +300,34 @@ public static class ProductImageEndpoints
     btn.style.display = 'inline-block';
   }
 
-  input.addEventListener('change', renderList);
+  input.addEventListener('change', async () => {
+    if (!input.files || input.files.length === 0) { renderList(); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Resizing...';
+
+    try {
+      const dt = new DataTransfer();
+      for (const f of input.files) {
+        const small = await resizeIfNeeded(f);
+        dt.items.add(small);
+      }
+      input.files = dt.files;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Upload';
+      renderList();
+    }
+  });
 
   ['dragenter','dragover'].forEach(ev => zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.add('dragging'); }));
   ['dragleave','drop'].forEach(ev => zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.remove('dragging'); }));
-  zone.addEventListener('drop', e => {
+  zone.addEventListener('drop', async (e) => {
     if (e.dataTransfer && e.dataTransfer.files.length) {
-      input.files = e.dataTransfer.files;
-      renderList();
+      const dt = new DataTransfer();
+      for (const f of e.dataTransfer.files) dt.items.add(f);
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change'));
     }
   });
 })();

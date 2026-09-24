@@ -1,18 +1,13 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-using SkiaSharp;
 using System.IO;
 
 namespace EcommercePortfolio.Infrastructure.Storage;
 
 public class LocalImageStorage : IImageStorage
 {
-    private const long MaxBytes     = 5 * 1024 * 1024;
-    private const int  MinDimension = 800;
-    private const int  MaxDimension = 4000;
-    private const int  ResizeTo     = 2000;
-    private const int  JpegQuality  = 85;
+    private const long MaxBytes = 5 * 1024 * 1024;
 
     private static readonly HashSet<string> AllowedMime = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -39,57 +34,28 @@ public class LocalImageStorage : IImageStorage
         if (!AllowedMime.Contains(file.ContentType))
             return new ImageStoreResult(false, Error: "Only JPEG, PNG, or WebP images are allowed.");
 
-        // Decode into memory
-        using var input = file.OpenReadStream();
-        using var memory = new MemoryStream();
-        await input.CopyToAsync(memory, ct);
-        memory.Position = 0;
-
-        using var original = SKBitmap.Decode(memory);
-        if (original is null)
-            return new ImageStoreResult(false, Error: "The file is not a valid image.");
-
-        if (original.Width < MinDimension || original.Height < MinDimension)
-            return new ImageStoreResult(false,
-                Error: $"Image must be at least {MinDimension}×{MinDimension} px (got {original.Width}×{original.Height}).");
-
-        if (original.Width > MaxDimension || original.Height > MaxDimension)
-            return new ImageStoreResult(false,
-                Error: $"Image must be at most {MaxDimension}×{MaxDimension} px (got {original.Width}×{original.Height}).");
-
-        // Compute resize target (longest edge → ResizeTo)
-        int targetW = original.Width;
-        int targetH = original.Height;
-        if (targetW > ResizeTo || targetH > ResizeTo)
-        {
-            var scale = (double)ResizeTo / Math.Max(targetW, targetH);
-            targetW = Math.Max(1, (int)Math.Round(targetW * scale));
-            targetH = Math.Max(1, (int)Math.Round(targetH * scale));
-        }
-
-        using var resized = original.Resize(new SKImageInfo(targetW, targetH), new SKSamplingOptions(SKCubicResampler.Mitchell));
-        if (resized is null)
-            return new ImageStoreResult(false, Error: "Failed to resize image.");
-
-        // Save as JPEG
         var relDir = Path.Combine("uploads", "products", productId.ToString());
         var absDir = Path.Combine(_env.WebRootPath, relDir);
         Directory.CreateDirectory(absDir);
 
-        var fileName = $"{Guid.NewGuid():N}.jpg";
+        var ext = file.ContentType switch
+        {
+            "image/png"  => ".png",
+            "image/webp" => ".webp",
+            _            => ".jpg"
+        };
+        var fileName = $"{Guid.NewGuid():N}{ext}";
         var absPath = Path.Combine(absDir, fileName);
 
-        await using (var outStream = File.Create(absPath))
-        using (var data = resized.Encode(SKEncodedImageFormat.Jpeg, JpegQuality))
+        await using (var stream = File.Create(absPath))
         {
-            data.SaveTo(outStream);
+            await file.CopyToAsync(stream, ct);
         }
 
         var publicUrl = "/" + relDir.Replace('\\', '/') + "/" + fileName;
         var bytes = new FileInfo(absPath).Length;
 
-        return new ImageStoreResult(true, Url: publicUrl,
-            Width: targetW, Height: targetH, Bytes: bytes);
+        return new ImageStoreResult(true, Url: publicUrl, Bytes: bytes);
     }
 
     public Task DeleteAsync(string url, CancellationToken ct = default)

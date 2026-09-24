@@ -9,16 +9,13 @@ COPY src/EcommercePortfolio.Domain/*.csproj ./src/EcommercePortfolio.Domain/
 COPY src/EcommercePortfolio.Data/*.csproj ./src/EcommercePortfolio.Data/
 COPY src/EcommercePortfolio.Infrastructure/*.csproj ./src/EcommercePortfolio.Infrastructure/
 COPY src/EcommercePortfolio.Api/*.csproj ./src/EcommercePortfolio.Api/
-RUN dotnet restore src/EcommercePortfolio.Api/EcommercePortfolio.Api.csproj -r linux-x64
+RUN dotnet restore src/EcommercePortfolio.Api/EcommercePortfolio.Api.csproj
 
 COPY . .
-RUN dotnet publish src/EcommercePortfolio.Api/EcommercePortfolio.Api.csproj \
-    -c Release \
-    -r linux-x64 \
-    --self-contained false \
-    -o /app/publish
+RUN dotnet publish src/EcommercePortfolio.Api/EcommercePortfolio.Api.csproj -c Release -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends libgssapi-krb5-2 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app/publish ./
 RUN find /app -iname "*skiasharp*"
